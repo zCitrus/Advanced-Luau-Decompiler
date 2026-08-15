@@ -1,8 +1,204 @@
-local Luau = loadstring(game:HttpGet("https://raw.githubusercontent.com/USERNAME/REPO_NAME/main/Luau.lua"))() or require(script.Luau)
-local Reader = loadstring(game:HttpGet("https://raw.githubusercontent.com/USERNAME/REPO_NAME/main/Reader.lua"))() or require(script.Reader)
+--[[
+    Advanced Luau Decompiler (Patched & Up to Date)
+    Repository: https://github.com/zCitrus/Advanced-Luau-Decompiler
+    Supports: Luau Bytecode v3 to v6
+--]]
 
-local Decompiler = {}
 local bit = bit32 or bit
+
+-- ==============================================================================
+-- 1. Bytecode Specification & Opcode Tables
+-- ==============================================================================
+local Luau = {
+    LBC_VERSION_MIN = 3,
+    LBC_VERSION_MAX = 6,
+    LBC_TYPE_VERSION_MIN = 1,
+    LBC_TYPE_VERSION_MAX = 3,
+
+    ConstantType = {
+        NIL = 0,
+        BOOLEAN = 1,
+        NUMBER = 2,
+        STRING = 3,
+        IMPORT = 4,
+        TABLE = 5,
+        CLOSURE = 6,
+        VECTOR = 7
+    },
+
+    FORMAT_ABC = 1,
+    FORMAT_AD  = 2,
+    FORMAT_E   = 3,
+
+    OpCodes = {
+        [0]  = { name = "NOP", format = 1, aux = false },
+        [1]  = { name = "BREAK", format = 1, aux = false },
+        [2]  = { name = "LOADNIL", format = 2, aux = false },
+        [3]  = { name = "LOADB", format = 1, aux = false },
+        [4]  = { name = "LOADN", format = 2, aux = false },
+        [5]  = { name = "LOADK", format = 2, aux = false },
+        [6]  = { name = "MOVE", format = 2, aux = false },
+        [7]  = { name = "GETGLOBAL", format = 2, aux = true },
+        [8]  = { name = "SETGLOBAL", format = 2, aux = true },
+        [9]  = { name = "GETUPVAL", format = 2, aux = false },
+        [10] = { name = "SETUPVAL", format = 2, aux = false },
+        [11] = { name = "CLOSEUPVALS", format = 2, aux = false },
+        [12] = { name = "GETIMPORT", format = 2, aux = true },
+        [13] = { name = "GETTABLE", format = 1, aux = false },
+        [14] = { name = "SETTABLE", format = 1, aux = false },
+        [15] = { name = "GETTABLEKS", format = 1, aux = true },
+        [16] = { name = "SETTABLEKS", format = 1, aux = true },
+        [17] = { name = "GETTABLEN", format = 1, aux = false },
+        [18] = { name = "SETTABLEN", format = 1, aux = false },
+        [19] = { name = "NEWCLOSURE", format = 2, aux = false },
+        [20] = { name = "NAMECALL", format = 1, aux = true },
+        [21] = { name = "CALL", format = 1, aux = false },
+        [22] = { name = "RETURN", format = 1, aux = false },
+        [23] = { name = "JUMP", format = 2, aux = false },
+        [24] = { name = "JUMPBACK", format = 2, aux = false },
+        [25] = { name = "JUMPIF", format = 2, aux = false },
+        [26] = { name = "JUMPIFNOT", format = 2, aux = false },
+        [27] = { name = "JUMPIFEQ", format = 2, aux = true },
+        [28] = { name = "JUMPIFLE", format = 2, aux = true },
+        [29] = { name = "JUMPIFLT", format = 2, aux = true },
+        [30] = { name = "JUMPIFNOTEQ", format = 2, aux = true },
+        [31] = { name = "JUMPIFNOTLE", format = 2, aux = true },
+        [32] = { name = "JUMPIFNOTLT", format = 2, aux = true },
+        [33] = { name = "ADD", format = 1, aux = false },
+        [34] = { name = "SUB", format = 1, aux = false },
+        [35] = { name = "MUL", format = 1, aux = false },
+        [36] = { name = "DIV", format = 1, aux = false },
+        [37] = { name = "MOD", format = 1, aux = false },
+        [38] = { name = "POW", format = 1, aux = false },
+        [39] = { name = "ADDK", format = 1, aux = false },
+        [40] = { name = "SUBK", format = 1, aux = false },
+        [41] = { name = "MULK", format = 1, aux = false },
+        [42] = { name = "DIVK", format = 1, aux = false },
+        [43] = { name = "MODK", format = 1, aux = false },
+        [44] = { name = "POWK", format = 1, aux = false },
+        [45] = { name = "AND", format = 1, aux = false },
+        [46] = { name = "OR", format = 1, aux = false },
+        [47] = { name = "ANDK", format = 1, aux = false },
+        [48] = { name = "ORK", format = 1, aux = false },
+        [49] = { name = "CONCAT", format = 1, aux = false },
+        [50] = { name = "NOT", format = 2, aux = false },
+        [51] = { name = "MINUS", format = 2, aux = false },
+        [52] = { name = "LENGTH", format = 2, aux = false },
+        [53] = { name = "NEWTABLE", format = 1, aux = true },
+        [54] = { name = "DUPTABLE", format = 2, aux = false },
+        [55] = { name = "SETLIST", format = 1, aux = true },
+        [56] = { name = "FORNPREP", format = 2, aux = false },
+        [57] = { name = "FORNLOOP", format = 2, aux = false },
+        [58] = { name = "FORGLOOP", format = 2, aux = true },
+        [59] = { name = "FORGPREP_INEXT", format = 2, aux = false },
+        [60] = { name = "FASTCALL3", format = 1, aux = true },
+        [61] = { name = "FORGPREP_NEXT", format = 2, aux = false },
+        [62] = { name = "GETVARARGS", format = 1, aux = false },
+        [63] = { name = "DUPCLOSURE", format = 2, aux = false },
+        [64] = { name = "BREAKPOINT", format = 1, aux = false },
+        [65] = { name = "FALLTHROUGH", format = 1, aux = false },
+        [66] = { name = "COVERAGE", format = 3, aux = false },
+        [67] = { name = "CAPTURE", format = 2, aux = false },
+        [68] = { name = "SUBRK", format = 1, aux = false },
+        [69] = { name = "DIVRK", format = 1, aux = false },
+        [70] = { name = "FASTCALL", format = 1, aux = false },
+        [71] = { name = "FASTCALL1", format = 1, aux = false },
+        [72] = { name = "FASTCALL2", format = 1, aux = true },
+        [73] = { name = "FASTCALL2K", format = 1, aux = true },
+        [74] = { name = "FORGPREP", format = 2, aux = false },
+        [75] = { name = "JUMPXEQKNIL", format = 2, aux = true },
+        [76] = { name = "JUMPXEQKB", format = 2, aux = true },
+        [77] = { name = "JUMPXEQKN", format = 2, aux = true },
+        [78] = { name = "JUMPXEQKS", format = 2, aux = true },
+        [79] = { name = "IDIV", format = 1, aux = false },
+        [80] = { name = "IDIVK", format = 1, aux = false }
+    }
+}
+
+-- ==============================================================================
+-- 2. Fast Binary Stream Reader
+-- ==============================================================================
+local Reader = {}
+Reader.__index = Reader
+
+function Reader.new(data)
+    local self = setmetatable({}, Reader)
+    self.data = data
+    self.cursor = 1
+    self.length = #data
+    return self
+end
+
+function Reader:ReadByte()
+    local b = self.data:byte(self.cursor)
+    self.cursor = self.cursor + 1
+    return b
+end
+
+function Reader:ReadBytes(len)
+    local str = self.data:sub(self.cursor, self.cursor + len - 1)
+    self.cursor = self.cursor + len
+    return str
+end
+
+function Reader:ReadVarInt()
+    local result = 0
+    local shift = 0
+    while true do
+        local b = self:ReadByte()
+        result = bit.bor(result, bit.lshift(bit.band(b, 0x7F), shift))
+        shift = shift + 7
+        if bit.band(b, 0x80) == 0 then break end
+    end
+    return result
+end
+
+function Reader:ReadUInt32()
+    if string.unpack then
+        local val = string.unpack("<I4", self.data, self.cursor)
+        self.cursor = self.cursor + 4
+        return val
+    end
+    local b1, b2, b3, b4 = self.data:byte(self.cursor, self.cursor + 3)
+    self.cursor = self.cursor + 4
+    return bit.bor(b1, bit.lshift(b2, 8), bit.lshift(b3, 16), bit.lshift(b4, 24))
+end
+
+function Reader:ReadFloat()
+    if string.unpack then
+        local val = string.unpack("<f", self.data, self.cursor)
+        self.cursor = self.cursor + 4
+        return val
+    end
+    local b1, b2, b3, b4 = self.data:byte(self.cursor, self.cursor + 3)
+    self.cursor = self.cursor + 4
+    local sign = (b4 >= 128) and -1 or 1
+    local exponent = bit.band(bit.lshift(b4, 1), 0xFF) + bit.rshift(b3, 7)
+    local mantissa = bit.bor(bit.lshift(bit.band(b3, 0x7F), 16), bit.lshift(b2, 8), b1)
+    if exponent == 0 then return 0.0 end
+    return sign * (1.0 + (mantissa / 0x800000)) * (2 ^ (exponent - 127))
+end
+
+function Reader:ReadDouble()
+    if string.unpack then
+        local val = string.unpack("<d", self.data, self.cursor)
+        self.cursor = self.cursor + 8
+        return val
+    end
+    local b = { self.data:byte(self.cursor, self.cursor + 7) }
+    self.cursor = self.cursor + 8
+    local sign = (b[8] >= 128) and -1 or 1
+    local exponent = bit.band(bit.lshift(b[8], 4), 0x7F0) + bit.rshift(b[7], 4)
+    local mantissa = (b[7] % 16)
+    for i = 6, 1, -1 do mantissa = mantissa * 256 + b[i] end
+    if exponent == 0 then return 0.0 end
+    return sign * (1.0 + (mantissa / (2 ^ 52))) * (2 ^ (exponent - 1023))
+end
+
+-- ==============================================================================
+-- 3. Core Deserializer & Output Formatter
+-- ==============================================================================
+local Decompiler = {}
 
 local function formatConstant(k)
     if type(k) == "string" then
@@ -16,6 +212,10 @@ local function formatConstant(k)
 end
 
 function Decompiler.decompile(bytecode)
+    if type(bytecode) ~= "string" or #bytecode == 0 then
+        return "-- [Error] Invalid or empty bytecode provided"
+    end
+
     local reader = Reader.new(bytecode)
     local version = reader:ReadByte()
 
@@ -46,7 +246,7 @@ function Decompiler.decompile(bytecode)
         end
     end
 
-    -- 3. Protos
+    -- 3. Proto Table
     local protoCount = reader:ReadVarInt()
     local protos = {}
 
@@ -91,9 +291,8 @@ function Decompiler.decompile(bytecode)
                 constants[i] = "Import(" .. tostring(reader:ReadUInt32()) .. ")"
             elseif ktype == Luau.ConstantType.TABLE then
                 local keyCount = reader:ReadVarInt()
-                local keys = {}
-                for k = 1, keyCount do
-                    keys[k] = reader:ReadVarInt()
+                for _ = 1, keyCount do
+                    reader:ReadVarInt()
                 end
                 constants[i] = "TableShape(size=" .. tostring(keyCount) .. ")"
             elseif ktype == Luau.ConstantType.CLOSURE then
@@ -120,7 +319,7 @@ function Decompiler.decompile(bytecode)
         local hasLineInfo = reader:ReadByte()
         if hasLineInfo == 1 then
             local linegaplog2 = reader:ReadByte()
-            local intervals = bit.rshift(sizecode - 1, linegaplog2) + 1
+            local intervals = (sizecode > 0) and (bit.rshift(sizecode - 1, linegaplog2) + 1) or 0
             for _ = 1, sizecode do reader:ReadByte() end
             for _ = 1, intervals do reader:ReadUInt32() end
         end
@@ -146,9 +345,9 @@ function Decompiler.decompile(bytecode)
 
     local mainProtoId = reader:ReadVarInt()
 
-    -- 4. Disassemble Output Generation
+    -- 4. Assembly & Disassembly Output
     local output = {}
-    table.insert(output, string.format("-- Advanced Decompiler Patched (Luau Bytecode v%d, TypeTable v%d)", version, typeVersion))
+    table.insert(output, string.format("-- Advanced Luau Decompiler (v%d, TypeTable v%d)", version, typeVersion))
     table.insert(output, string.format("-- Protos: %d | Strings: %d | Main: Proto %d\n", #protos, #stringTable, mainProtoId))
 
     for _, proto in ipairs(protos) do
@@ -187,6 +386,10 @@ function Decompiler.decompile(bytecode)
                 desc = desc .. " ; " .. formatConstant(proto.constants[d + 1])
             elseif (opInfo.name == "GETGLOBAL" or opInfo.name == "SETGLOBAL" or opInfo.name == "GETTABLEKS" or opInfo.name == "SETTABLEKS" or opInfo.name == "NAMECALL") and aux and proto.constants[aux + 1] ~= nil then
                 desc = desc .. " ; " .. formatConstant(proto.constants[aux + 1])
+            elseif opInfo.name == "NEWCLOSURE" and proto.protos[d + 1] ~= nil then
+                local subId = proto.protos[d + 1]
+                local subName = protos[subId + 1] and protos[subId + 1].debugname or "sub"
+                desc = desc .. string.format(" ; Proto %d (%s)", subId, subName)
             end
 
             table.insert(output, string.format("    [%04d] %-15s %s", pc - 1, opInfo.name, desc))
