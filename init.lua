@@ -1,134 +1,24 @@
 --[[
-    Advanced Luau Decompiler (v9+ Modern Bytecode Engine)
+    Advanced Luau Decompiler (Human-Readable AST Engine)
     Repository: https://github.com/zCitrus/Advanced-Luau-Decompiler
-    Supports: Luau Bytecode v3 to v13 (Roblox 2026 Compatible)
+    Output: Structured, Human-Readable Pseudo-Lua Source Code
 --]]
 
 local bit = bit32 or bit
 
--- ==============================================================================
--- 1. Bytecode Specification & Opcode Tables (Synced with Canonical Luau)
--- ==============================================================================
 local Luau = {
     LBC_VERSION_MIN = 3,
-    LBC_VERSION_MAX = 13, -- Updated to support modern Version 9 - 13 bytecode
-    LBC_TYPE_VERSION_MIN = 1,
+    LBC_VERSION_MAX = 13,
     LBC_TYPE_VERSION_MAX = 3,
 
     ConstantType = {
-        NIL = 0,
-        BOOLEAN = 1,
-        NUMBER = 2,
-        STRING = 3,
-        IMPORT = 4,
-        TABLE = 5,
-        CLOSURE = 6,
-        VECTOR = 7,
-        TABLE_WITH_CONSTANTS = 8,
-        INTEGER = 9,
-        CLASS_SHAPE = 10,
-        VECTORD = 11
-    },
-
-    FORMAT_ABC = 1,
-    FORMAT_AD  = 2,
-    FORMAT_E   = 3,
-
-    OpCodes = {
-        [0]  = { name = "NOP", format = 1, aux = false },
-        [1]  = { name = "BREAK", format = 1, aux = false },
-        [2]  = { name = "LOADNIL", format = 2, aux = false },
-        [3]  = { name = "LOADB", format = 1, aux = false },
-        [4]  = { name = "LOADN", format = 2, aux = false },
-        [5]  = { name = "LOADK", format = 2, aux = false },
-        [6]  = { name = "MOVE", format = 2, aux = false },
-        [7]  = { name = "GETGLOBAL", format = 2, aux = true },
-        [8]  = { name = "SETGLOBAL", format = 2, aux = true },
-        [9]  = { name = "GETUPVAL", format = 2, aux = false },
-        [10] = { name = "SETUPVAL", format = 2, aux = false },
-        [11] = { name = "CLOSEUPVALS", format = 2, aux = false },
-        [12] = { name = "GETIMPORT", format = 2, aux = true },
-        [13] = { name = "GETTABLE", format = 1, aux = false },
-        [14] = { name = "SETTABLE", format = 1, aux = false },
-        [15] = { name = "GETTABLEKS", format = 1, aux = true },
-        [16] = { name = "SETTABLEKS", format = 1, aux = true },
-        [17] = { name = "GETTABLEN", format = 1, aux = false },
-        [18] = { name = "SETTABLEN", format = 1, aux = false },
-        [19] = { name = "NEWCLOSURE", format = 2, aux = false },
-        [20] = { name = "NAMECALL", format = 1, aux = true },
-        [21] = { name = "CALL", format = 1, aux = false },
-        [22] = { name = "RETURN", format = 1, aux = false },
-        [23] = { name = "JUMP", format = 2, aux = false },
-        [24] = { name = "JUMPBACK", format = 2, aux = false },
-        [25] = { name = "JUMPIF", format = 2, aux = false },
-        [26] = { name = "JUMPIFNOT", format = 2, aux = false },
-        [27] = { name = "JUMPIFEQ", format = 2, aux = true },
-        [28] = { name = "JUMPIFLE", format = 2, aux = true },
-        [29] = { name = "JUMPIFLT", format = 2, aux = true },
-        [30] = { name = "JUMPIFNOTEQ", format = 2, aux = true },
-        [31] = { name = "JUMPIFNOTLE", format = 2, aux = true },
-        [32] = { name = "JUMPIFNOTLT", format = 2, aux = true },
-        [33] = { name = "ADD", format = 1, aux = false },
-        [34] = { name = "SUB", format = 1, aux = false },
-        [35] = { name = "MUL", format = 1, aux = false },
-        [36] = { name = "DIV", format = 1, aux = false },
-        [37] = { name = "MOD", format = 1, aux = false },
-        [38] = { name = "POW", format = 1, aux = false },
-        [39] = { name = "ADDK", format = 1, aux = false },
-        [40] = { name = "SUBK", format = 1, aux = false },
-        [41] = { name = "MULK", format = 1, aux = false },
-        [42] = { name = "DIVK", format = 1, aux = false },
-        [43] = { name = "MODK", format = 1, aux = false },
-        [44] = { name = "POWK", format = 1, aux = false },
-        [45] = { name = "AND", format = 1, aux = false },
-        [46] = { name = "OR", format = 1, aux = false },
-        [47] = { name = "ANDK", format = 1, aux = false },
-        [48] = { name = "ORK", format = 1, aux = false },
-        [49] = { name = "CONCAT", format = 1, aux = false },
-        [50] = { name = "NOT", format = 2, aux = false },
-        [51] = { name = "MINUS", format = 2, aux = false },
-        [52] = { name = "LENGTH", format = 2, aux = false },
-        [53] = { name = "NEWTABLE", format = 1, aux = true },
-        [54] = { name = "DUPTABLE", format = 2, aux = false },
-        [55] = { name = "SETLIST", format = 1, aux = true },
-        [56] = { name = "FORNPREP", format = 2, aux = false },
-        [57] = { name = "FORNLOOP", format = 2, aux = false },
-        [58] = { name = "FORGLOOP", format = 2, aux = true },
-        [59] = { name = "FORGPREP_INEXT", format = 2, aux = false },
-        [60] = { name = "FASTCALL3", format = 1, aux = true },
-        [61] = { name = "FORGPREP_NEXT", format = 2, aux = false },
-        [62] = { name = "GETVARARGS", format = 1, aux = false },
-        [63] = { name = "DUPCLOSURE", format = 2, aux = false },
-        [64] = { name = "BREAKPOINT", format = 1, aux = false },
-        [65] = { name = "FALLTHROUGH", format = 1, aux = false },
-        [66] = { name = "COVERAGE", format = 3, aux = false },
-        [67] = { name = "CAPTURE", format = 2, aux = false },
-        [68] = { name = "SUBRK", format = 1, aux = false },
-        [69] = { name = "DIVRK", format = 1, aux = false },
-        [70] = { name = "FASTCALL", format = 1, aux = false },
-        [71] = { name = "FASTCALL1", format = 1, aux = false },
-        [72] = { name = "FASTCALL2", format = 1, aux = true },
-        [73] = { name = "FASTCALL2K", format = 1, aux = true },
-        [74] = { name = "FORGPREP", format = 2, aux = false },
-        [75] = { name = "JUMPXEQKNIL", format = 2, aux = true },
-        [76] = { name = "JUMPXEQKB", format = 2, aux = true },
-        [77] = { name = "JUMPXEQKN", format = 2, aux = true },
-        [78] = { name = "JUMPXEQKS", format = 2, aux = true },
-        [79] = { name = "IDIV", format = 1, aux = false },
-        [80] = { name = "IDIVK", format = 1, aux = false },
-        [81] = { name = "GETUDATAKS", format = 1, aux = true },
-        [82] = { name = "SETUDATAKS", format = 1, aux = true },
-        [83] = { name = "NAMECALLUDATA", format = 1, aux = true },
-        [84] = { name = "NEWCLASSMEMBER", format = 1, aux = true },
-        [85] = { name = "CALLFB", format = 1, aux = true },
-        [86] = { name = "CMPPROTO", format = 2, aux = true },
-        [87] = { name = "NEWCLASS", format = 1, aux = true }
+        NIL = 0, BOOLEAN = 1, NUMBER = 2, STRING = 3,
+        IMPORT = 4, TABLE = 5, CLOSURE = 6, VECTOR = 7,
+        TABLE_WITH_CONSTANTS = 8, INTEGER = 9, CLASS_SHAPE = 10, VECTORD = 11
     }
 }
 
--- ==============================================================================
--- 2. Fast Binary Stream Reader
--- ==============================================================================
+-- Fast Stream Reader
 local Reader = {}
 Reader.__index = Reader
 
@@ -207,20 +97,18 @@ function Reader:ReadDouble()
     return sign * (1.0 + (mantissa / (2 ^ 52))) * (2 ^ (exponent - 1023))
 end
 
--- ==============================================================================
--- 3. Core Deserializer & Output Formatter
--- ==============================================================================
+-- AST Expression Decompiler
 local Decompiler = {}
 
-local function formatConstant(k)
-    if type(k) == "string" then
-        return string.format("%q", k)
-    elseif type(k) == "number" or type(k) == "boolean" then
-        return tostring(k)
-    elseif k == nil then
+local function formatValue(v)
+    if type(v) == "string" then
+        return string.format("%q", v)
+    elseif type(v) == "number" or type(v) == "boolean" then
+        return tostring(v)
+    elseif v == nil then
         return "nil"
     end
-    return tostring(k)
+    return tostring(v)
 end
 
 function Decompiler.decompile(bytecode)
@@ -232,7 +120,7 @@ function Decompiler.decompile(bytecode)
     local version = reader:ReadByte()
 
     if version < Luau.LBC_VERSION_MIN or version > Luau.LBC_VERSION_MAX then
-        return string.format("-- [Error] Unsupported Luau bytecode version: %d (Expected %d-%d)", version, Luau.LBC_VERSION_MIN, Luau.LBC_VERSION_MAX)
+        return string.format("-- [Error] Unsupported Luau bytecode version: %d", version)
     end
 
     local typeVersion = 0
@@ -300,29 +188,25 @@ function Decompiler.decompile(bytecode)
                 local sIdx = reader:ReadVarInt()
                 constants[i] = stringTable[sIdx] or ("str_" .. tostring(sIdx))
             elseif ktype == Luau.ConstantType.IMPORT then
-                constants[i] = "Import(" .. tostring(reader:ReadUInt32()) .. ")"
+                constants[i] = reader:ReadUInt32()
             elseif ktype == Luau.ConstantType.TABLE or ktype == Luau.ConstantType.TABLE_WITH_CONSTANTS then
                 local keyCount = reader:ReadVarInt()
-                for _ = 1, keyCount do
-                    reader:ReadVarInt()
-                end
-                constants[i] = "TableShape(size=" .. tostring(keyCount) .. ")"
+                for _ = 1, keyCount do reader:ReadVarInt() end
+                constants[i] = {}
             elseif ktype == Luau.ConstantType.CLOSURE then
-                constants[i] = "Closure(proto=" .. tostring(reader:ReadVarInt()) .. ")"
+                constants[i] = reader:ReadVarInt()
             elseif ktype == Luau.ConstantType.VECTOR then
                 local x, y, z, w = reader:ReadFloat(), reader:ReadFloat(), reader:ReadFloat(), reader:ReadFloat()
-                constants[i] = string.format("Vector(%f, %f, %f, %f)", x, y, z, w)
+                constants[i] = string.format("Vector3.new(%f, %f, %f)", x, y, z)
             elseif ktype == Luau.ConstantType.INTEGER then
                 constants[i] = reader:ReadVarInt()
             elseif ktype == Luau.ConstantType.VECTORD then
                 local x, y, z, w = reader:ReadDouble(), reader:ReadDouble(), reader:ReadDouble(), reader:ReadDouble()
-                constants[i] = string.format("VectorD(%f, %f, %f, %f)", x, y, z, w)
+                constants[i] = string.format("Vector3.new(%f, %f, %f)", x, y, z)
             elseif ktype == Luau.ConstantType.CLASS_SHAPE then
                 local keyCount = reader:ReadVarInt()
-                for _ = 1, keyCount do
-                    reader:ReadVarInt()
-                end
-                constants[i] = "ClassShape(size=" .. tostring(keyCount) .. ")"
+                for _ = 1, keyCount do reader:ReadVarInt() end
+                constants[i] = {}
             end
         end
         proto.constants = constants
@@ -368,17 +252,29 @@ function Decompiler.decompile(bytecode)
 
     local mainProtoId = reader:ReadVarInt()
 
-    -- 4. Disassembly Output
-    local output = {}
-    table.insert(output, string.format("-- Advanced Luau Decompiler (Bytecode v%d, TypeTable v%d)", version, typeVersion))
-    table.insert(output, string.format("-- Protos: %d | Strings: %d | Main: Proto %d\n", #protos, #stringTable, mainProtoId))
-
-    for _, proto in ipairs(protos) do
-        table.insert(output, string.format("PROTO [%d] '%s':", proto.id, proto.debugname))
-        table.insert(output, string.format("  .params %d | .upvalues %d | .stack %d", proto.numparams, proto.numupvalues, proto.maxstacksize))
-
-        local pc = 1
+    -- 4. High-Level Lua Code Reconstruction
+    local function decompileProto(proto, indent)
+        local pad = string.rep("    ", indent)
+        local lines = {}
+        local registers = {}
         local code = proto.code
+
+        -- Initialize arguments
+        local params = {}
+        for p = 0, proto.numparams - 1 do
+            local pName = "arg" .. tostring(p)
+            registers[p] = pName
+            table.insert(params, pName)
+        end
+
+        if proto.id ~= mainProtoId then
+            local fnName = (proto.debugname ~= "anonymous" and proto.debugname ~= "") and proto.debugname or ("func_" .. tostring(proto.id))
+            table.insert(lines, string.format("%slocal function %s(%s)", pad, fnName, table.concat(params, ", ")))
+        end
+
+        local innerPad = (proto.id == mainProtoId) and pad or (pad .. "    ")
+        local pc = 1
+
         while pc <= #code do
             local inst = code[pc]
             local op = bit.band(inst, 0xFF)
@@ -388,40 +284,101 @@ function Decompiler.decompile(bytecode)
             local d = bit.rshift(inst, 16)
             if d >= 0x8000 then d = d - 0x10000 end
 
-            local opInfo = Luau.OpCodes[op] or { name = "OP_" .. tostring(op), format = Luau.FORMAT_ABC, aux = false }
-            local aux = (opInfo.aux and pc < #code) and code[pc + 1] or nil
+            local aux = (pc < #code) and code[pc + 1] or nil
 
-            local desc = ""
-            if opInfo.format == Luau.FORMAT_ABC then
-                desc = string.format("R%d, R%d, R%d", a, b, c)
-            elseif opInfo.format == Luau.FORMAT_AD then
-                desc = string.format("R%d, %d", a, d)
-            elseif opInfo.format == Luau.FORMAT_E then
-                desc = tostring(bit.rshift(inst, 8))
+            if op == 2 then -- LOADNIL
+                registers[a] = "nil"
+            elseif op == 3 then -- LOADB
+                registers[a] = (b == 1 and "true" or "false")
+            elseif op == 4 then -- LOADN
+                registers[a] = tostring(d)
+            elseif op == 5 then -- LOADK
+                local k = proto.constants[d + 1]
+                registers[a] = formatValue(k)
+            elseif op == 6 then -- MOVE
+                registers[a] = registers[b] or ("v" .. tostring(b))
+            elseif op == 7 then -- GETGLOBAL
+                local k = proto.constants[(aux or d) + 1] or "global"
+                registers[a] = tostring(k)
+                pc = pc + 1
+            elseif op == 8 then -- SETGLOBAL
+                local k = proto.constants[(aux or d) + 1] or "global"
+                table.insert(lines, string.format("%s%s = %s", innerPad, tostring(k), registers[a] or "nil"))
+                pc = pc + 1
+            elseif op == 12 then -- GETIMPORT
+                local k = proto.constants[d + 1]
+                registers[a] = tostring(k or "game")
+                pc = pc + 1
+            elseif op == 13 or op == 15 then -- GETTABLE / GETTABLEKS
+                local k = (op == 15 and aux) and proto.constants[aux + 1] or registers[c]
+                local obj = registers[b] or ("v" .. tostring(b))
+                registers[a] = string.format("%s.%s", tostring(obj), tostring(k))
+                if op == 15 then pc = pc + 1 end
+            elseif op == 14 or op == 16 then -- SETTABLE / SETTABLEKS
+                local k = (op == 16 and aux) and proto.constants[aux + 1] or registers[b]
+                local val = registers[a] or "nil"
+                table.insert(lines, string.format("%s%s.%s = %s", innerPad, registers[c] or ("v" .. tostring(c)), tostring(k), val))
+                if op == 16 then pc = pc + 1 end
+            elseif op == 19 or op == 63 then -- NEWCLOSURE / DUPCLOSURE
+                local subProtoId = proto.protos[d + 1] or d
+                if protos[subProtoId + 1] then
+                    table.insert(lines, decompileProto(protos[subProtoId + 1], indent + (proto.id == mainProtoId and 0 or 1)))
+                    registers[a] = (protos[subProtoId + 1].debugname ~= "anonymous") and protos[subProtoId + 1].debugname or ("func_" .. tostring(subProtoId))
+                end
+            elseif op == 20 then -- NAMECALL
+                local method = aux and proto.constants[aux + 1] or "method"
+                registers[a] = string.format("%s:%s", registers[b] or ("v" .. tostring(b)), tostring(method))
+                pc = pc + 1
+            elseif op == 21 then -- CALL
+                local fn = registers[a] or ("v" .. tostring(a))
+                local args = {}
+                for i = 1, math.max(0, b - 2) do
+                    table.insert(args, registers[a + 1 + i] or ("v" .. tostring(a + 1 + i)))
+                end
+                table.insert(lines, string.format("%s%s(%s)", innerPad, fn, table.concat(args, ", ")))
+            elseif op == 22 then -- RETURN
+                if b == 1 then
+                    table.insert(lines, string.format("%sreturn", innerPad))
+                elseif b > 1 then
+                    local rets = {}
+                    for i = 0, b - 2 do
+                        table.insert(rets, registers[a + i] or ("v" .. tostring(a + i)))
+                    end
+                    table.insert(lines, string.format("%sreturn %s", innerPad, table.concat(rets, ", ")))
+                end
+            elseif op == 33 or op == 39 then -- ADD / ADDK
+                local valB = registers[b] or ("v" .. tostring(b))
+                local valC = (op == 39) and formatValue(proto.constants[c + 1]) or (registers[c] or ("v" .. tostring(c)))
+                registers[a] = string.format("(%s + %s)", valB, valC)
+            elseif op == 34 or op == 40 then -- SUB / SUBK
+                local valB = registers[b] or ("v" .. tostring(b))
+                local valC = (op == 40) and formatValue(proto.constants[c + 1]) or (registers[c] or ("v" .. tostring(c)))
+                registers[a] = string.format("(%s - %s)", valB, valC)
+            elseif op == 35 or op == 41 then -- MUL / MULK
+                local valB = registers[b] or ("v" .. tostring(b))
+                local valC = (op == 41) and formatValue(proto.constants[c + 1]) or (registers[c] or ("v" .. tostring(c)))
+                registers[a] = string.format("(%s * %s)", valB, valC)
+            elseif op == 36 or op == 42 then -- DIV / DIVK
+                local valB = registers[b] or ("v" .. tostring(b))
+                local valC = (op == 42) and formatValue(proto.constants[c + 1]) or (registers[c] or ("v" .. tostring(c)))
+                registers[a] = string.format("(%s / %s)", valB, valC)
+            elseif op == 53 or op == 54 then -- NEWTABLE / DUPTABLE
+                registers[a] = "{}"
+                if op == 53 and aux then pc = pc + 1 end
             end
 
-            if aux then
-                desc = desc .. string.format(" [AUX: %d]", aux)
-            end
-
-            -- Constant Annotations
-            if (opInfo.name == "LOADK" or opInfo.name == "DUPTABLE") and proto.constants[d + 1] ~= nil then
-                desc = desc .. " ; " .. formatConstant(proto.constants[d + 1])
-            elseif (opInfo.name == "GETGLOBAL" or opInfo.name == "SETGLOBAL" or opInfo.name == "GETTABLEKS" or opInfo.name == "SETTABLEKS" or opInfo.name == "NAMECALL") and aux and proto.constants[aux + 1] ~= nil then
-                desc = desc .. " ; " .. formatConstant(proto.constants[aux + 1])
-            elseif opInfo.name == "NEWCLOSURE" and proto.protos[d + 1] ~= nil then
-                local subId = proto.protos[d + 1]
-                local subName = protos[subId + 1] and protos[subId + 1].debugname or "sub"
-                desc = desc .. string.format(" ; Proto %d (%s)", subId, subName)
-            end
-
-            table.insert(output, string.format("    [%04d] %-15s %s", pc - 1, opInfo.name, desc))
-            pc = pc + (opInfo.aux and 2 or 1)
+            pc = pc + 1
         end
-        table.insert(output, "")
+
+        if proto.id ~= mainProtoId then
+            table.insert(lines, string.format("%send\n", pad))
+        end
+
+        return table.concat(lines, "\n")
     end
 
-    return table.concat(output, "\n")
+    local mainProto = protos[mainProtoId + 1] or protos[#protos]
+    return decompileProto(mainProto, 0)
 end
 
 return Decompiler
