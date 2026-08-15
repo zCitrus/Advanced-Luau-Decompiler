@@ -1,3 +1,8 @@
+--[[
+    Fast Binary Stream Reader for Luau Bytecode
+    Repository: https://github.com/zCitrus/Advanced-Luau-Decompiler
+--]]
+
 local Reader = {}
 Reader.__index = Reader
 
@@ -12,6 +17,7 @@ function Reader.new(data)
 end
 
 function Reader:ReadByte()
+    if self.cursor > self.length then return 0 end
     local b = self.data:byte(self.cursor)
     self.cursor = self.cursor + 1
     return b
@@ -36,12 +42,32 @@ function Reader:ReadVarInt()
 end
 
 function Reader:ReadUInt32()
+    if string.unpack then
+        local val = string.unpack("<I4", self.data, self.cursor)
+        self.cursor = self.cursor + 4
+        return val
+    end
     local b1, b2, b3, b4 = self.data:byte(self.cursor, self.cursor + 3)
     self.cursor = self.cursor + 4
     return bit.bor(b1, bit.lshift(b2, 8), bit.lshift(b3, 16), bit.lshift(b4, 24))
 end
 
+function Reader:ReadInt32()
+    if string.unpack then
+        local val = string.unpack("<i4", self.data, self.cursor)
+        self.cursor = self.cursor + 4
+        return val
+    end
+    local u = self:ReadUInt32()
+    return (u >= 0x80000000) and (u - 0x100000000) or u
+end
+
 function Reader:ReadFloat()
+    if string.unpack then
+        local val = string.unpack("<f", self.data, self.cursor)
+        self.cursor = self.cursor + 4
+        return val
+    end
     local b1, b2, b3, b4 = self.data:byte(self.cursor, self.cursor + 3)
     self.cursor = self.cursor + 4
     local sign = (b4 >= 128) and -1 or 1
@@ -52,6 +78,11 @@ function Reader:ReadFloat()
 end
 
 function Reader:ReadDouble()
+    if string.unpack then
+        local val = string.unpack("<d", self.data, self.cursor)
+        self.cursor = self.cursor + 8
+        return val
+    end
     local b = { self.data:byte(self.cursor, self.cursor + 7) }
     self.cursor = self.cursor + 8
     local sign = (b[8] >= 128) and -1 or 1
