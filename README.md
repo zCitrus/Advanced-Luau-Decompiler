@@ -1,18 +1,18 @@
-# Advanced Luau Decompiler (Patched & Up to Date)
+# Advanced Luau Decompiler (v6 Patched)
 
-An updated, pure-Lua Luau bytecode deserializer and decompiler engine supporting modern Luau bytecode (v3 to v6).
+An up-to-date, pure-Lua Luau bytecode deserializer and decompiler engine supporting modern Luau bytecode revisions (v3 through v6).
 
 ## Features
-- Full support for Luau Bytecode v3 through v6.
-- Updated opcode table matching canonical `Bytecode.h`.
-- Supports Type Tables, Vector constants, and multi-word `AUX` instructions.
-- Compatible with modern Roblox executors and standalone Luau VMs.
+- **Modern Opcode Support:** Updated opcode table matching canonical `Bytecode.h` (includes `IDIV`, `FASTCALL3`, `JUMPXEQ`, and Vector types).
+- **Fast & Pure Lua:** Uses `string.unpack` with binary fallbacks for maximum performance.
+- **Standalone:** Zero external network dependencies once loaded.
 
-## Quick Usage (In-Game / Executor)
+## Usage
 
 ```lua
 local Decompiler = loadstring(game:HttpGet("https://raw.githubusercontent.com/zCitrus/Advanced-Luau-Decompiler/main/init.lua"))()
 
+-- Decompile any script's bytecode
 local scriptBytecode = getscriptbytecode(workspace.SampleScript)
 local source = Decompiler.decompile(scriptBytecode)
 
