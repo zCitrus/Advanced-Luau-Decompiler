@@ -1,17 +1,17 @@
 --[[
-    Advanced Luau Decompiler (Patched & Up to Date)
+    Advanced Luau Decompiler (v9+ Modern Bytecode Engine)
     Repository: https://github.com/zCitrus/Advanced-Luau-Decompiler
-    Supports: Luau Bytecode v3 to v6
+    Supports: Luau Bytecode v3 to v13 (Roblox 2026 Compatible)
 --]]
 
 local bit = bit32 or bit
 
 -- ==============================================================================
--- 1. Bytecode Specification & Opcode Tables
+-- 1. Bytecode Specification & Opcode Tables (Synced with Canonical Luau)
 -- ==============================================================================
 local Luau = {
     LBC_VERSION_MIN = 3,
-    LBC_VERSION_MAX = 6,
+    LBC_VERSION_MAX = 13, -- Updated to support modern Version 9 - 13 bytecode
     LBC_TYPE_VERSION_MIN = 1,
     LBC_TYPE_VERSION_MAX = 3,
 
@@ -23,7 +23,11 @@ local Luau = {
         IMPORT = 4,
         TABLE = 5,
         CLOSURE = 6,
-        VECTOR = 7
+        VECTOR = 7,
+        TABLE_WITH_CONSTANTS = 8,
+        INTEGER = 9,
+        CLASS_SHAPE = 10,
+        VECTORD = 11
     },
 
     FORMAT_ABC = 1,
@@ -111,7 +115,14 @@ local Luau = {
         [77] = { name = "JUMPXEQKN", format = 2, aux = true },
         [78] = { name = "JUMPXEQKS", format = 2, aux = true },
         [79] = { name = "IDIV", format = 1, aux = false },
-        [80] = { name = "IDIVK", format = 1, aux = false }
+        [80] = { name = "IDIVK", format = 1, aux = false },
+        [81] = { name = "GETUDATAKS", format = 1, aux = true },
+        [82] = { name = "SETUDATAKS", format = 1, aux = true },
+        [83] = { name = "NAMECALLUDATA", format = 1, aux = true },
+        [84] = { name = "NEWCLASSMEMBER", format = 1, aux = true },
+        [85] = { name = "CALLFB", format = 1, aux = true },
+        [86] = { name = "CMPPROTO", format = 2, aux = true },
+        [87] = { name = "NEWCLASS", format = 1, aux = true }
     }
 }
 
@@ -130,6 +141,7 @@ function Reader.new(data)
 end
 
 function Reader:ReadByte()
+    if self.cursor > self.length then return 0 end
     local b = self.data:byte(self.cursor)
     self.cursor = self.cursor + 1
     return b
@@ -289,7 +301,7 @@ function Decompiler.decompile(bytecode)
                 constants[i] = stringTable[sIdx] or ("str_" .. tostring(sIdx))
             elseif ktype == Luau.ConstantType.IMPORT then
                 constants[i] = "Import(" .. tostring(reader:ReadUInt32()) .. ")"
-            elseif ktype == Luau.ConstantType.TABLE then
+            elseif ktype == Luau.ConstantType.TABLE or ktype == Luau.ConstantType.TABLE_WITH_CONSTANTS then
                 local keyCount = reader:ReadVarInt()
                 for _ = 1, keyCount do
                     reader:ReadVarInt()
@@ -300,6 +312,17 @@ function Decompiler.decompile(bytecode)
             elseif ktype == Luau.ConstantType.VECTOR then
                 local x, y, z, w = reader:ReadFloat(), reader:ReadFloat(), reader:ReadFloat(), reader:ReadFloat()
                 constants[i] = string.format("Vector(%f, %f, %f, %f)", x, y, z, w)
+            elseif ktype == Luau.ConstantType.INTEGER then
+                constants[i] = reader:ReadVarInt()
+            elseif ktype == Luau.ConstantType.VECTORD then
+                local x, y, z, w = reader:ReadDouble(), reader:ReadDouble(), reader:ReadDouble(), reader:ReadDouble()
+                constants[i] = string.format("VectorD(%f, %f, %f, %f)", x, y, z, w)
+            elseif ktype == Luau.ConstantType.CLASS_SHAPE then
+                local keyCount = reader:ReadVarInt()
+                for _ = 1, keyCount do
+                    reader:ReadVarInt()
+                end
+                constants[i] = "ClassShape(size=" .. tostring(keyCount) .. ")"
             end
         end
         proto.constants = constants
@@ -345,9 +368,9 @@ function Decompiler.decompile(bytecode)
 
     local mainProtoId = reader:ReadVarInt()
 
-    -- 4. Assembly & Disassembly Output
+    -- 4. Disassembly Output
     local output = {}
-    table.insert(output, string.format("-- Advanced Luau Decompiler (v%d, TypeTable v%d)", version, typeVersion))
+    table.insert(output, string.format("-- Advanced Luau Decompiler (Bytecode v%d, TypeTable v%d)", version, typeVersion))
     table.insert(output, string.format("-- Protos: %d | Strings: %d | Main: Proto %d\n", #protos, #stringTable, mainProtoId))
 
     for _, proto in ipairs(protos) do
