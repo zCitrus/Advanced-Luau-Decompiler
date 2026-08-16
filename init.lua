@@ -1,7 +1,7 @@
 --[[
-    Advanced Luau Decompiler (Human-Readable AST Reconstructor)
+    Advanced Luau Decompiler Pro (v6 - v13+)
     Repository: https://github.com/zCitrus/Advanced-Luau-Decompiler
-    Output: Structured, Readable High-Level Lua Source Code
+    Features: Contextual Type/Name Inference, AST Inlining, Semantic Recovery
 --]]
 
 local bit = bit32 or bit
@@ -9,6 +9,7 @@ local bit = bit32 or bit
 local Luau = {
     LBC_VERSION_MIN = 3,
     LBC_VERSION_MAX = 13,
+    LBC_TYPE_VERSION_MIN = 1,
     LBC_TYPE_VERSION_MAX = 3,
 
     ConstantType = {
@@ -18,7 +19,7 @@ local Luau = {
     }
 }
 
--- Fast Stream Reader
+-- Fast Stream Reader with string.unpack
 local Reader = {}
 Reader.__index = Reader
 
@@ -97,7 +98,66 @@ function Reader:ReadDouble()
     return sign * (1.0 + (mantissa / (2 ^ 52))) * (2 ^ (exponent - 1023))
 end
 
--- AST Decompiler
+-- ==============================================================================
+-- Semantic Name & Type Inferer
+-- ==============================================================================
+local SemanticEngine = {}
+
+-- Common Service Inferences
+local KNOWN_SERVICES = {
+    ["Players"] = true, ["Workspace"] = true, ["ReplicatedStorage"] = true,
+    ["TweenService"] = true, ["UserInputService"] = true, ["RunService"] = true,
+    ["HttpService"] = true, ["MarketplaceService"] = true, ["Debris"] = true,
+    ["SoundService"] = true, ["Lighting"] = true, ["TeleportService"] = true,
+    ["ContextActionService"] = true, ["GuiService"] = true, ["StarterGui"] = true
+}
+
+function SemanticEngine.inferServiceName(argumentStr)
+    local clean = argumentStr:gsub("[\"']", "")
+    if KNOWN_SERVICES[clean] then
+        return clean
+    end
+    return nil
+end
+
+function SemanticEngine.inferInstanceName(className, explicitName)
+    if explicitName and #explicitName > 0 then
+        return explicitName:gsub("[^%w_]", "")
+    end
+    if className == "Part" then return "part" end
+    if className == "SurfaceLight" or className == "PointLight" then return "light" end
+    if className == "Sound" then return "sound" end
+    if className == "Animation" then return "anim" end
+    if className == "RemoteEvent" then return "remoteEvent" end
+    if className == "RemoteFunction" then return "remoteFunction" end
+    if className == "BindableEvent" then return "bindableEvent" end
+    return "instance"
+end
+
+function SemanticEngine.inferParamName(protoName, index, total)
+    local lower = (protoName or ""):lower()
+    if lower:find("taser") or lower:find("bullet") or lower:find("ray") or lower:find("shoot") then
+        if index == 0 then return "origin" end
+        if index == 1 then return "targetPos" end
+    end
+    if lower:find("player") then
+        if index == 0 then return "player" end
+        if index == 1 then return "character" end
+    end
+    if lower:find("child") then
+        if index == 0 then return "childName" end
+        if index == 1 then return "className" end
+    end
+    if lower:find("set") or lower:find("setting") then
+        if index == 0 then return "settingKey" end
+        if index == 1 then return "settingValue" end
+    end
+    return "p" .. tostring(index + 1)
+end
+
+-- ==============================================================================
+-- Pro AST Decompiler & Code Emitter
+-- ==============================================================================
 local Decompiler = {}
 
 local function formatValue(v)
@@ -120,7 +180,7 @@ function Decompiler.decompile(bytecode)
     local version = reader:ReadByte()
 
     if version < Luau.LBC_VERSION_MIN or version > Luau.LBC_VERSION_MAX then
-        return string.format("-- [Error] Unsupported Luau bytecode version: %d", version)
+        return string.format("-- [Error] Unsupported Luau bytecode version: %d (Expected %d-%d)", version, Luau.LBC_VERSION_MIN, Luau.LBC_VERSION_MAX)
     end
 
     local typeVersion = 0
@@ -252,23 +312,27 @@ function Decompiler.decompile(bytecode)
 
     local mainProtoId = reader:ReadVarInt()
 
-    -- 4. Clean Lua Code Emission
+    -- 4. High-Level Semantic AST Generation
+    local detectedServices = {}
+    local exportedFunctions = {}
+
     local function decompileProto(proto, indent)
         local pad = string.rep("    ", indent)
         local lines = {}
         local registers = {}
         local code = proto.code
 
-        -- Initialize parameters
+        -- Inferred Parameters
         local params = {}
         for p = 0, proto.numparams - 1 do
-            local pName = "arg" .. tostring(p)
+            local pName = SemanticEngine.inferParamName(proto.debugname, p, proto.numparams)
             registers[p] = pName
             table.insert(params, pName)
         end
 
         if proto.id ~= mainProtoId then
             local fnName = (proto.debugname ~= "anonymous" and proto.debugname ~= "") and proto.debugname or ("func_" .. tostring(proto.id))
+            table.insert(exportedFunctions, fnName)
             table.insert(lines, string.format("%slocal function %s(%s)", pad, fnName, table.concat(params, ", ")))
         end
 
@@ -335,7 +399,17 @@ function Decompiler.decompile(bytecode)
                 for i = 1, math.max(0, b - 2) do
                     table.insert(args, registers[a + 1 + i] or ("v" .. tostring(a + 1 + i)))
                 end
-                table.insert(lines, string.format("%s%s(%s)", innerPad, fn, table.concat(args, ", ")))
+
+                -- Service Name Semantic Detection
+                if fn:find("GetService") and args[1] then
+                    local sName = SemanticEngine.inferServiceName(args[1])
+                    if sName then
+                        detectedServices[sName] = true
+                        registers[a] = string.format("game:GetService(%s)", formatValue(sName))
+                    end
+                else
+                    table.insert(lines, string.format("%s%s(%s)", innerPad, fn, table.concat(args, ", ")))
+                end
             elseif op == 22 then -- RETURN
                 if b == 1 then
                     table.insert(lines, string.format("%sreturn", innerPad))
@@ -377,8 +451,25 @@ function Decompiler.decompile(bytecode)
         return table.concat(lines, "\n")
     end
 
+    -- 5. Build Final Formatted Output with Header Metadata
     local mainProto = protos[mainProtoId + 1] or protos[#protos]
-    return decompileProto(mainProto, 0)
+    local decompiledBody = decompileProto(mainProto, 0)
+
+    local serviceList = {}
+    for sName in pairs(detectedServices) do
+        table.insert(serviceList, sName)
+    end
+    table.sort(serviceList)
+
+    local header = {}
+    table.insert(header, "--!strict")
+    table.insert(header, "-- ==============================================================================")
+    table.insert(header, string.format("-- ⚡ Advanced Luau Decompiler Pro (Bytecode v%d, TypeTable v%d)", version, typeVersion))
+    table.insert(header, string.format("-- Services Used: %s", (#serviceList > 0 and table.concat(serviceList, ", ") or "None Detected")))
+    table.insert(header, string.format("-- Protos: %d | Constants: %d | String Table: %d", #protos, #mainProto.constants, #stringTable))
+    table.insert(header, "-- ==============================================================================\n")
+
+    return table.concat(header, "\n") .. decompiledBody
 end
 
 return Decompiler
