@@ -1,7 +1,7 @@
 --[[
-    Advanced Luau Decompiler (Human-Readable AST Engine)
+    Advanced Luau Decompiler (Human-Readable AST Reconstructor)
     Repository: https://github.com/zCitrus/Advanced-Luau-Decompiler
-    Output: Structured, Human-Readable Pseudo-Lua Source Code
+    Output: Structured, Readable High-Level Lua Source Code
 --]]
 
 local bit = bit32 or bit
@@ -97,7 +97,7 @@ function Reader:ReadDouble()
     return sign * (1.0 + (mantissa / (2 ^ 52))) * (2 ^ (exponent - 1023))
 end
 
--- AST Expression Decompiler
+-- AST Decompiler
 local Decompiler = {}
 
 local function formatValue(v)
@@ -252,14 +252,14 @@ function Decompiler.decompile(bytecode)
 
     local mainProtoId = reader:ReadVarInt()
 
-    -- 4. High-Level Lua Code Reconstruction
+    -- 4. Clean Lua Code Emission
     local function decompileProto(proto, indent)
         local pad = string.rep("    ", indent)
         local lines = {}
         local registers = {}
         local code = proto.code
 
-        -- Initialize arguments
+        -- Initialize parameters
         local params = {}
         for p = 0, proto.numparams - 1 do
             local pName = "arg" .. tostring(p)
