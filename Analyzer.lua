@@ -1,18 +1,16 @@
 --[[
-    Static AST Analyzer & API Interface Stub Generator
+    Advanced Luau Semantic Analyzer & Hook Harness Generator
     Repository: https://github.com/zCitrus/Advanced-Luau-Decompiler
-    Purpose: Statically extracts remote calls and function signatures 
-             from decompiled Lua source and generates structured API stubs.
+    Purpose: Deep static code analysis, semantic variable extraction,
+             and automated Hook/Override test harness generation.
 --]]
 
 local Analyzer = {}
 
--- Utility: Trims whitespace from strings
 local function trim(s)
     return (s:gsub("^%s*(.-)%s*$", "%1"))
 end
 
--- Utility: Sanitizes identifier names
 local function sanitizeIdentifier(name)
     local clean = name:gsub("[^%w_]", "_")
     if clean:match("^%d") then
@@ -22,52 +20,85 @@ local function sanitizeIdentifier(name)
 end
 
 --[[
-    Analyzes decompiled source code to extract:
-    1. RemoteEvent invocations (:FireServer)
-    2. RemoteFunction invocations (:InvokeServer)
-    3. Exported functions and global calls
+    Deep Static Code Analysis
+    Scans AST output for:
+    - Remote calls (:FireServer, :InvokeServer)
+    - State & Configuration tables
+    - Math formulas and variable assignments
+    - Declared local/global functions
 --]]
-function Analyzer.analyzeSource(decompiledCode)
+function Analyzer.deepAnalyze(code)
     local results = {
-        remoteEvents = {},
-        remoteFunctions = {},
-        functions = {}
+        remotes = {},
+        functions = {},
+        stateVariables = {},
+        configTables = {},
+        mathCalculations = {}
     }
 
-    if type(decompiledCode) ~= "string" or #decompiledCode == 0 then
+    if type(code) ~= "string" or #code == 0 then
         return results
     end
 
     local seenRemotes = {}
+    local seenVars = {}
 
-    -- 1. Scan for RemoteEvent :FireServer calls
-    for line in decompiledCode:gmatch("[^\r\n]+") do
-        local caller, args = line:match("([%w_%.%:%[%]\"']+):[Ff]ire[Ss]erver%((.-)%)")
-        if caller and not seenRemotes[caller .. ":FireServer"] then
-            seenRemotes[caller .. ":FireServer"] = true
-            table.insert(results.remoteEvents, {
-                caller = trim(caller),
-                args = trim(args)
+    for line in code:gmatch("[^\r\n]+") do
+        local trimmed = trim(line)
+
+        -- 1. Detect Remote Calls
+        local rCaller, rMethod, rArgs = trimmed:match("([%w_%.%:%[%]\"']+):([Ff]ire[Ss]erver|[Ii]nvoke[Ss]erver)%((.-)%)")
+        if rCaller and not seenRemotes[rCaller .. ":" .. rMethod] then
+            seenRemotes[rCaller .. ":" .. rMethod] = true
+            table.insert(results.remotes, {
+                caller = rCaller,
+                method = rMethod,
+                args = trim(rArgs),
+                isEvent = (rMethod:lower() == "fireserver")
             })
         end
 
-        -- 2. Scan for RemoteFunction :InvokeServer calls
-        local invoker, invArgs = line:match("([%w_%.%:%[%]\"']+):[Ii]nvoke[Ss]erver%((.-)%)")
-        if invoker and not seenRemotes[invoker .. ":InvokeServer"] then
-            seenRemotes[invoker .. ":InvokeServer"] = true
-            table.insert(results.remoteFunctions, {
-                caller = trim(invoker),
-                args = trim(invArgs)
-            })
+        -- 2. Detect Function Declarations
+        local fnName, fnParams = trimmed:match("local%s+function%s+([%w_]+)%((.-)%)")
+        if not fnName then
+            fnName, fnParams = trimmed:match("function%s+([%w_%.%:]+)%((.-)%)")
         end
-
-        -- 3. Scan for standalone declared functions
-        local fnName, fnParams = line:match("local%s+function%s+([%w_]+)%((.-)%)")
         if fnName then
             table.insert(results.functions, {
                 name = fnName,
                 params = trim(fnParams)
             })
+        end
+
+        -- 3. Detect Mathematical Expressions & State Modifiers
+        local varName, expr = trimmed:match("([%w_%.%[%]]+)%s*=%s*(%b()|[-%w_%.%s%*%/%%%+%-]+)")
+        if varName and expr and not trimmed:find("function") and not trimmed:find("==") then
+            if expr:find("[%+%-%*%/%%]") and not seenVars[varName] then
+                seenVars[varName] = true
+                table.insert(results.mathCalculations, {
+                    target = varName,
+                    expression = trim(expr)
+                })
+            end
+        end
+
+        -- 4. Detect Number & String Variable Assignments
+        local sVar, sVal = trimmed:match("local%s+([%w_]+)%s*=%s*([%d%.]+)")
+        if not sVar then
+            sVar, sVal = trimmed:match("local%s+([%w_]+)%s*=%s*(\"[^\"]*\")")
+        end
+        if sVar and sVal and not seenVars[sVar] then
+            seenVars[sVar] = true
+            table.insert(results.stateVariables, {
+                name = sVar,
+                value = sVal
+            })
+        end
+
+        -- 5. Detect Table Structures
+        local tName = trimmed:match("local%s+([%w_]+)%s*=%s*{}")
+        if tName then
+            table.insert(results.configTables, tName)
         end
     end
 
@@ -75,71 +106,119 @@ function Analyzer.analyzeSource(decompiledCode)
 end
 
 --[[
-    Generates a structured, executable API wrapper script from analyzed patterns.
+    Generates a high-level, human-readable Hook & Manipulation Harness.
+    This creates an executable module with:
+    - Override Configuration Table
+    - Function Interception / Hook Wrappers
+    - Calculation Overrides
+    - Network Remote Invokers
 --]]
-function Analyzer.generateInterfaceScript(decompiledCode, scriptName)
-    local analysis = Analyzer.analyzeSource(decompiledCode)
+function Analyzer.generateInterfaceScript(code, scriptName)
+    local data = Analyzer.deepAnalyze(code)
     local name = scriptName or "TargetScript"
     local output = {}
 
     table.insert(output, "-- ==============================================================================")
-    table.insert(output, string.format("-- Auto-Generated API Interface Wrapper for [%s]", name))
-    table.insert(output, "-- Generated via Advanced Luau Decompiler & Analyzer")
+    table.insert(output, string.format("-- ⚡ Intelligent Control & Override Harness for [%s]", name))
+    table.insert(output, "-- Auto-generated by Advanced Luau Decompiler & Semantic Analyzer")
     table.insert(output, "-- ==============================================================================\n")
 
-    table.insert(output, "local ReplicatedStorage = game:GetService(\"ReplicatedStorage\")")
     table.insert(output, "local Players = game:GetService(\"Players\")")
+    table.insert(output, "local ReplicatedStorage = game:GetService(\"ReplicatedStorage\")")
     table.insert(output, "local LocalPlayer = Players.LocalPlayer\n")
 
-    table.insert(output, "local API = {}\n")
+    -- 1. Configuration & Variable Modifiers
+    table.insert(output, "-- [ 1. Extracted State & Config Overrides ]")
+    table.insert(output, "local HarnessConfig = {")
+    if #data.stateVariables > 0 then
+        for _, var in ipairs(data.stateVariables) do
+            table.insert(output, string.format("    %s = %s,", var.name, var.value))
+        end
+    else
+        table.insert(output, "    -- No static constants detected; customize custom values below:")
+        table.insert(output, "    SpeedMultiplier = 1.0,")
+        table.insert(output, "    Enabled = true,")
+    end
+    table.insert(output, "}\n")
 
-    -- Generate RemoteEvent wrappers
-    if #analysis.remoteEvents > 0 then
-        table.insert(output, "-- --- [ RemoteEvent Interface Wrappers ] --- --")
-        for i, event in ipairs(analysis.remoteEvents) do
-            local cleanName = sanitizeIdentifier(event.caller:match("([%w_]+)$") or ("Event_" .. i))
-            local paramList = (event.args ~= "") and event.args or "..."
-
-            table.insert(output, string.format("function API.fire_%s(%s)", cleanName, paramList))
-            table.insert(output, string.format("    local remote = %s", event.caller))
-            table.insert(output, "    if remote and remote:IsA(\"RemoteEvent\") then")
-            table.insert(output, string.format("        remote:FireServer(%s)", paramList))
-            table.insert(output, "    else")
-            table.insert(output, string.format("        warn(\"[-] RemoteEvent not found: %s\")", event.caller))
-            table.insert(output, "    end")
+    -- 2. Math & Calculation Handlers
+    if #data.mathCalculations > 0 then
+        table.insert(output, "-- [ 2. Mathematical Logic & Custom Calculators ]")
+        for i, mathOp in ipairs(data.mathCalculations) do
+            local cleanFn = "calculate_" .. sanitizeIdentifier(mathOp.target) .. "_" .. i
+            table.insert(output, string.format("local function %s(customFactor)", cleanFn))
+            table.insert(output, string.format("    -- Original formula: %s", mathOp.expression))
+            table.insert(output, string.format("    local baseResult = %s", mathOp.expression))
+            table.insert(output, "    return baseResult * (customFactor or HarnessConfig.SpeedMultiplier or 1.0)")
             table.insert(output, "end\n")
         end
     end
 
-    -- Generate RemoteFunction wrappers
-    if #analysis.remoteFunctions > 0 then
-        table.insert(output, "-- --- [ RemoteFunction Interface Wrappers ] --- --")
-        for i, func in ipairs(analysis.remoteFunctions) do
-            local cleanName = sanitizeIdentifier(func.caller:match("([%w_]+)$") or ("Function_" .. i))
-            local paramList = (func.args ~= "") and func.args or "..."
+    -- 3. Function Hook / Monkey-Patching Stubs
+    table.insert(output, "-- [ 3. Function Interception & Hooks ]")
+    table.insert(output, "local Hooks = {}\n")
 
-            table.insert(output, string.format("function API.invoke_%s(%s)", cleanName, paramList))
-            table.insert(output, string.format("    local remote = %s", func.caller))
-            table.insert(output, "    if remote and remote:IsA(\"RemoteFunction\") then")
-            table.insert(output, string.format("        return remote:InvokeServer(%s)", paramList))
-            table.insert(output, "    else")
-            table.insert(output, string.format("        warn(\"[-] RemoteFunction not found: %s\")", func.caller))
+    if #data.functions > 0 then
+        for _, fn in ipairs(data.functions) do
+            local cleanName = sanitizeIdentifier(fn.name)
+            local params = (fn.params ~= "") and fn.params or "..."
+
+            table.insert(output, string.format("function Hooks.hook_%s(originalFunction)", cleanName))
+            table.insert(output, string.format("    return function(%s)", params))
+            table.insert(output, string.format("        -- [Pre-Execution Hook: Modify arguments or inspect state here]"))
+            table.insert(output, string.format("        print(\"[Hook] %s called with:\", %s)", cleanName, params))
+            table.insert(output, "")
+            table.insert(output, string.format("        -- Call original logic or return customized result:"))
+            table.insert(output, string.format("        if originalFunction then"))
+            table.insert(output, string.format("            return originalFunction(%s)", params))
+            table.insert(output, "        end")
             table.insert(output, "    end")
             table.insert(output, "end\n")
         end
+    else
+        table.insert(output, "-- [*] No explicit named local functions detected for hook generation.\n")
     end
 
-    -- If no network endpoints were detected
-    if #analysis.remoteEvents == 0 and #analysis.remoteFunctions == 0 then
-        table.insert(output, "-- [*] No direct RemoteEvent/RemoteFunction calls were detected in this script.")
-        table.insert(output, "-- Static Function Stubs Extracted:")
-        for _, fn in ipairs(analysis.functions) do
-            table.insert(output, string.format("-- function %s(%s)", fn.name, fn.params))
+    -- 4. Remote Event & Function Wrappers
+    if #data.remotes > 0 then
+        table.insert(output, "-- [ 4. Network Remote Dispatchers ]")
+        table.insert(output, "local Network = {}\n")
+
+        for i, rem in ipairs(data.remotes) do
+            local cleanName = sanitizeIdentifier(rem.caller:match("([%w_]+)$") or ("Remote_" .. i))
+            local params = (rem.args ~= "") and rem.args or "..."
+
+            if rem.isEvent then
+                table.insert(output, string.format("function Network.fire_%s(%s)", cleanName, params))
+                table.insert(output, string.format("    local remote = %s", rem.caller))
+                table.insert(output, "    if remote and remote:IsA(\"RemoteEvent\") then")
+                table.insert(output, string.format("        remote:FireServer(%s)", params))
+                table.insert(output, "    else")
+                table.insert(output, string.format("        warn(\"[-] RemoteEvent not found: %s\")", rem.caller))
+                table.insert(output, "    end")
+                table.insert(output, "end\n")
+            else
+                table.insert(output, string.format("function Network.invoke_%s(%s)", cleanName, params))
+                table.insert(output, string.format("    local remote = %s", rem.caller))
+                table.insert(output, "    if remote and remote:IsA(\"RemoteFunction\") then")
+                table.insert(output, string.format("        return remote:InvokeServer(%s)", params))
+                table.insert(output, "    else")
+                table.insert(output, string.format("        warn(\"[-] RemoteFunction not found: %s\")", rem.caller))
+                table.insert(output, "    end")
+                table.insert(output, "end\n")
+            end
         end
-        table.insert(output, "")
     end
 
-    table.insert(output, "return API")
+    -- 5. Export Harness API
+    table.insert(output, "-- [ 5. Export Master Controller ]")
+    table.insert(output, "return {")
+    table.insert(output, "    Config = HarnessConfig,")
+    table.insert(output, "    Hooks = Hooks,")
+    if #data.remotes > 0 then
+        table.insert(output, "    Network = Network,")
+    end
+    table.insert(output, "}")
 
     return table.concat(output, "\n")
 end
